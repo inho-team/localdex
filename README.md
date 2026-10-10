@@ -30,7 +30,7 @@ Pairing is normally one-time. If Wireless debugging turns off after a reboot or 
 
 - **Display spec** is `WIDTHxHEIGHT/DPI` (default `1920x1440/240`). Lower DPI = more desktop room; higher DPI = bigger UI.
 - Match the display spec's aspect ratio to the phone screen to avoid black borders. For the unfolded Galaxy Z Fold7, start with `1600x1440/240` and rotate the phone to landscape. A native-resolution spec such as `2184x1968/240` asks the device to encode substantially more pixels and may be less stable. Stop and restart DeX after folding or unfolding; the virtual display does not resize automatically.
-- If an app is clipped inside its DeX window on the unfolded Fold7, try `1600x1440/200` and restart DeX. The lower DPI gives the app more logical width at the same video resolution; text and controls will appear smaller. Maximize the app window using its drag handle if needed.
+- If an app shows content in only part of its DeX window after a DPI change, restore `1600x1440/240`, restart DeX, then close and reopen that app after the desktop is ready. Some apps do not handle DeX density or window-size changes correctly.
 - **Input is a virtual mouse**: one finger = click and drag (drag window handles to move windows), two fingers = scroll wheel. **Back** (gesture or key) is forwarded to DeX.
 - The translucent **✕ button** stops the session (with confirmation). **Tap-and-hold to drag it** anywhere — it starts in the top-right corner.
 - Leave the viewer with Home; the session keeps running. Return (or stop) via the **LocalDex notification** — the notification's *Stop* action always ends the session, even if the viewer is gone.
