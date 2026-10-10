@@ -83,33 +83,11 @@ class MainActivity : AppCompatActivity() {
                     showConnectedState()
                     stopService(Intent(this@MainActivity, PairingInputService::class.java))
                     Prefs.setHasPairedBefore(this@MainActivity)
-                    acquireWirelessDebuggingPermission()
                 }
                 else -> {
-                    // Holding WRITE_SECURE_SETTINGS lets us switch wireless debugging
-                    // back on ourselves (it turns off on reboot / network change).
-                    if (Prefs.hasPairedBefore(this@MainActivity) &&
-                        !WirelessDebugging.isEnabled(this@MainActivity) &&
-                        WirelessDebugging.canToggle(this@MainActivity)
-                    ) {
-                        statusText.text = "Turning wireless debugging on…"
-                        val enabled = WirelessDebugging.enable(this@MainActivity)
-                        if (enabled) {
-                            checkStatus(forceCheck = true)
-                            return@launch
-                        }
-                    }
                     showSetupChecklist()
                 }
             }
-        }
-    }
-
-    private fun acquireWirelessDebuggingPermission() {
-        if (permissionGrantAttempted || WirelessDebugging.canToggle(this)) return
-        permissionGrantAttempted = true
-        lifecycleScope.launch {
-            WirelessDebugging.tryAcquireTogglePermission(this@MainActivity)
         }
     }
 
@@ -147,6 +125,22 @@ class MainActivity : AppCompatActivity() {
     private fun showSetupChecklist() {
         val devModeEnabled = isDeveloperOptionsEnabled()
         val notificationsEnabled = NotificationManagerCompat.from(this).areNotificationsEnabled()
+        val wirelessDebuggingEnabled = WirelessDebugging.isEnabled(this)
+        val previouslyPaired = Prefs.hasPairedBefore(this)
+
+        if (devModeEnabled && previouslyPaired && !wirelessDebuggingEnabled) {
+            statusText.text = "Wireless debugging is off. Turn it on in Developer options, " +
+                "then return and tap Refresh. LocalDex does not enable it automatically."
+            actionButton.text = "Open Developer options"
+            actionButton.setOnClickListener { openDeveloperOptions() }
+            actionButton.visibility = View.VISIBLE
+            refreshButton.visibility = View.VISIBLE
+            configGroup.visibility = View.GONE
+            startButton.visibility = View.GONE
+            viewerButton.visibility = View.GONE
+            stopButton.visibility = View.GONE
+            return
+        }
 
         val step1 = if (devModeEnabled) "✅" else "⬜"
         val step2 = if (notificationsEnabled) "✅" else "⬜"
@@ -213,6 +207,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun startPairing() {
         startService(Intent(this, PairingInputService::class.java))
+        openDeveloperOptions()
+    }
+
+    private fun openDeveloperOptions() {
         try {
             startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
         } catch (e: Exception) {
@@ -230,7 +228,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun startDex() {
         val spec = displaySpecField.text.toString().trim()
-        if (!Regex("\\d{3,4}x\\d{3,4}/\\d{2,3}").matches(spec)) {
+        if (!Prefs.isValidDisplaySpec(spec)) {
             Toast.makeText(this, "Display spec must look like 1920x1440/240", Toast.LENGTH_LONG).show()
             return
         }
@@ -255,8 +253,5 @@ class MainActivity : AppCompatActivity() {
     companion object {
         /** Set by [PairingInputService] when it brings the app forward after pairing. */
         const val EXTRA_FROM_PAIRING = "com.localdex.FROM_PAIRING"
-
-        // Only try the self-grant once per session.
-        private var permissionGrantAttempted = false
     }
 }

@@ -1,65 +1,42 @@
-name: Release
+name: Prepare release APK
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to put in the APK (MAJOR.MINOR.PATCH)
+        required: true
+        type: string
 
 permissions:
-  contents: write
-
-concurrency:
-  group: release
-  cancel-in-progress: false
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve version from the release tag
+      - uses: actions/checkout@v4
+
+      - name: Validate version
         id: version
         env:
-          TAG: ${{ github.ref_name }}
+          VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          if [[ ! "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-            echo "Tag '${TAG}' is not a vMAJOR.MINOR.PATCH release tag." >&2
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)$ ]]; then
+            echo "Version must be MAJOR.MINOR.PATCH." >&2
             exit 1
           fi
-          major="${BASH_REMATCH[1]}"
-          minor="${BASH_REMATCH[2]}"
-          patch="${BASH_REMATCH[3]}"
-          # Derived from the version itself so it only ever grows and never has to
-          # be remembered (same scheme as anyapk).
+          major=$((10#${BASH_REMATCH[1]}))
+          minor=$((10#${BASH_REMATCH[2]}))
+          patch=$((10#${BASH_REMATCH[3]}))
           code=$(( major * 10000 + minor * 100 + patch ))
-          echo "version=${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
-          echo "versionCode=${code}" >> "$GITHUB_OUTPUT"
-          echo "Releasing ${TAG} as versionCode ${code}"
-
-      # The build comes from the tag itself, not from whatever main has moved on
-      # to since.
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-          fetch-depth: 1
-
-      - name: Align version for build
-        run: |
-          set -euo pipefail
-          version="${{ steps.version.outputs.version }}"
-          code="${{ steps.version.outputs.versionCode }}"
-          sed -i -E "s/(versionName\s*=\s*)\"[^\"]+\"/\1\"${version}\"/" app/build.gradle.kts
-          sed -i -E "s/(versionCode\s*=\s*)[0-9]+/\1${code}/" app/build.gradle.kts
-          grep -E 'versionName|versionCode' app/build.gradle.kts
-
-      # Debug builds are signed with the runner's auto-generated debug keystore.
-      # Cache it under a fixed key so every release carries the same signature —
-      # otherwise each tag would need an uninstall/reinstall on the device.
-      - name: Cache debug keystore
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: debug-keystore-v1
+          if (( code < 1 || code > 2100000000 )); then
+            echo "Version code is outside the Android package range." >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "versionCode=$code" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         with:
@@ -68,30 +45,85 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v3
 
-      - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug
-
-      - name: Stage APK with release name
+      - name: Load release signing key
+        env:
+          LOCALDEX_KEYSTORE_B64: ${{ secrets.LOCALDEX_KEYSTORE_B64 }}
         run: |
           set -euo pipefail
-          mkdir -p release
-          cp app/build/outputs/apk/debug/app-debug.apk \
-             "release/localdex-${{ steps.version.outputs.version }}-debug.apk"
-          ls -la release/
+          if [[ -z "$LOCALDEX_KEYSTORE_B64" ]]; then
+            echo "Release signing keystore is required." >&2
+            exit 1
+          fi
+          keystore="$RUNNER_TEMP/localdex-release.keystore"
+          printf '%s' "$LOCALDEX_KEYSTORE_B64" | base64 --decode > "$keystore"
+          chmod 600 "$keystore"
+          echo "LOCALDEX_SIGNING_STORE_FILE=$keystore" >> "$GITHUB_ENV"
+
+      - name: Align version for build
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          VERSION_CODE: ${{ steps.version.outputs.versionCode }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path("app/build.gradle.kts")
+          source = path.read_text()
+          source, name_count = re.subn(
+              r'versionName\s*=\s*"[^"]+"',
+              f'versionName = "{os.environ["VERSION"]}"',
+              source,
+              count=1,
+          )
+          source, code_count = re.subn(
+              r'versionCode\s*=\s*[0-9]+',
+              f'versionCode = {os.environ["VERSION_CODE"]}',
+              source,
+              count=1,
+          )
+          if name_count != 1 or code_count != 1:
+              raise SystemExit("Could not update both Android version fields.")
+          path.write_text(source)
+          PY
+
+      - name: Build signed release APK
+        env:
+          LOCALDEX_SIGNING_STORE_PASSWORD: ${{ secrets.LOCALDEX_SIGNING_STORE_PASSWORD }}
+          LOCALDEX_SIGNING_KEY_ALIAS: ${{ secrets.LOCALDEX_SIGNING_KEY_ALIAS }}
+          LOCALDEX_SIGNING_KEY_PASSWORD: ${{ secrets.LOCALDEX_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for value in "$LOCALDEX_SIGNING_STORE_PASSWORD" "$LOCALDEX_SIGNING_KEY_ALIAS" "$LOCALDEX_SIGNING_KEY_PASSWORD"; do
+            if [[ -z "$value" ]]; then
+              echo "All release signing secrets are required." >&2
+              exit 1
+            fi
+          done
+          ./gradlew --no-daemon assembleRelease
+
+      - name: Verify release APK
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/release/app-release.apk"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs "$apk"
+          analyzer="$(find "$ANDROID_HOME" -type f -name apkanalyzer -print -quit)"
+          if [[ -z "$analyzer" ]]; then
+            echo "apkanalyzer is required to check the APK manifest." >&2
+            exit 1
+          fi
+          manifest="$("$analyzer" manifest print "$apk")"
+          grep -q 'android:allowBackup="false"' <<< "$manifest"
+          if grep -q 'android:debuggable="true"' <<< "$manifest"; then
+            echo "Refusing to distribute a debuggable APK." >&2
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: apk
-          path: release/*.apk
+          name: localdex-${{ steps.version.outputs.version }}-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
           retention-days: 7
           if-no-files-found: error
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          # The tag already exists and already points at the right commit; this
-          # only attaches the build to it.
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          generate_release_notes: true
-          files: release/localdex-${{ steps.version.outputs.version }}-debug.apk

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>cc.midolog.localdex.cloudflared</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/cloudflared</string>
+        <string>tunnel</string>
+        <string>--config</string>
+        <string>/Users/kimjinseong/.cloudflared/localdex.yml</string>
+        <string>run</string>
+        <string>bad2920e-3120-4bcd-89ea-7300bf5c37b2</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/kimjinseong/Library/Logs/localdex-cloudflared.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/kimjinseong/Library/Logs/localdex-cloudflared.err.log</string>
+</dict>
+</plist>

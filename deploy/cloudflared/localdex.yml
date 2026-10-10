@@ -1,0 +1,7 @@
+tunnel: bad2920e-3120-4bcd-89ea-7300bf5c37b2
+credentials-file: /Users/kimjinseong/.cloudflared/bad2920e-3120-4bcd-89ea-7300bf5c37b2.json
+
+ingress:
+  - hostname: localdex.midolog.cc
+    service: http://127.0.0.1:8094
+  - service: http_status:404

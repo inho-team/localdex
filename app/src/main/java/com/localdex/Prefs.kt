@@ -8,6 +8,7 @@ object Prefs {
     private const val KEY_DISPLAY_SPEC = "display_spec"
 
     const val DEFAULT_DISPLAY_SPEC = "1920x1440/240"
+    private val DISPLAY_SPEC_PATTERN = Regex("[0-9]{3,4}x[0-9]{3,4}/[0-9]{2,3}")
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -19,10 +20,15 @@ object Prefs {
         prefs(context).edit().putBoolean(KEY_HAS_PAIRED, true).apply()
     }
 
-    fun getDisplaySpec(context: Context): String =
-        prefs(context).getString(KEY_DISPLAY_SPEC, DEFAULT_DISPLAY_SPEC) ?: DEFAULT_DISPLAY_SPEC
+    fun isValidDisplaySpec(spec: String): Boolean = DISPLAY_SPEC_PATTERN.matches(spec)
+
+    fun getDisplaySpec(context: Context): String {
+        val saved = prefs(context).getString(KEY_DISPLAY_SPEC, null)
+        return if (saved != null && isValidDisplaySpec(saved)) saved else DEFAULT_DISPLAY_SPEC
+    }
 
     fun setDisplaySpec(context: Context, spec: String) {
+        require(isValidDisplaySpec(spec)) { "Invalid display specification" }
         prefs(context).edit().putString(KEY_DISPLAY_SPEC, spec).apply()
     }
 }

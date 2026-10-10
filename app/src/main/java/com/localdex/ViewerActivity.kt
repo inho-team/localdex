@@ -241,6 +241,7 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     @Deprecated("Deprecated in Java")
+    @SuppressLint("MissingSuperCall") // Back is consumed by the remote display.
     override fun onBackPressed() {
         session?.controller?.sendKeyPress(KeyEvent.KEYCODE_BACK)
     }

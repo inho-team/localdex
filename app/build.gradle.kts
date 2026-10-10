@@ -3,6 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val releaseStoreFile = System.getenv("LOCALDEX_SIGNING_STORE_FILE")
+val releaseStorePassword = System.getenv("LOCALDEX_SIGNING_STORE_PASSWORD")
+val releaseKeyAlias = System.getenv("LOCALDEX_SIGNING_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("LOCALDEX_SIGNING_KEY_PASSWORD")
+val hasReleaseSigning = listOf(
+    releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.localdex"
     compileSdk = 34
@@ -20,8 +28,23 @@ android {
         resourceConfigurations += listOf("en")
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("localdexRelease") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword!!
+                keyAlias = releaseKeyAlias!!
+                keyPassword = releaseKeyPassword!!
+            }
+        }
+    }
+
     buildTypes {
         release {
+            isDebuggable = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("localdexRelease")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

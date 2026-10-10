@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>LocalDex 다운로드</title>
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f5f6f8; color: #20252b; }
+    main { width: min(100% - 2rem, 560px); margin: min(12vh, 7rem) auto; }
+    .mark { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 14px; background: #20252b; color: #fff; font-size: 23px; font-weight: 700; }
+    h1 { margin: 1.5rem 0 .45rem; font-size: clamp(2rem, 6vw, 2.6rem); letter-spacing: -.04em; }
+    .intro { margin: 0 0 2rem; color: #59616b; line-height: 1.65; }
+    .card { padding: 1.5rem; border: 1px solid #dfe3e8; border-radius: 18px; background: #fff; box-shadow: 0 12px 40px #20252b0a; }
+    .label { margin: 0 0 .3rem; color: #69727d; font-size: .85rem; }
+    .version { margin: 0 0 1.4rem; font-size: 1.3rem; font-weight: 650; }
+    .download { display: block; padding: 1rem; border-radius: 11px; background: #245bff; color: #fff; font-weight: 650; text-align: center; text-decoration: none; }
+    .download:hover, .download:focus-visible { background: #164be6; }
+    .meta { margin: 1rem 0 0; color: #69727d; font-size: .88rem; line-height: 1.5; }
+    h2 { margin: 2.4rem 0 .7rem; font-size: 1.08rem; }
+    ol { padding-left: 1.35rem; color: #4d5661; line-height: 1.8; }
+    .checksum { display: block; overflow-wrap: anywhere; padding: .8rem; border-radius: 8px; background: #e9ecf0; color: #3f4852; font: .77rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    footer { margin-top: 2rem; color: #7a838e; font-size: .82rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="mark" aria-hidden="true">L</div>
+    <h1>LocalDex</h1>
+    <p class="intro">삼성 휴대전화에서 DeX를 케이블이나 컴퓨터 없이 실행하고 조작할 수 있습니다.</p>
+
+    <section class="card" aria-label="APK 다운로드">
+      <p class="label">Android APK</p>
+      <p class="version">버전 0.1.0</p>
+      <a class="download" href="/LocalDex-0.1.0.apk" download>APK 다운로드</a>
+      <p class="meta">One UI 8 이상인 삼성 기기와 Android 11 이상이 필요합니다. 파일 크기는 약 24 MB입니다.</p>
+    </section>
+
+    <h2>설치 방법</h2>
+    <ol>
+      <li>삼성 휴대전화에서 APK를 다운로드하고 설치합니다.</li>
+      <li>설치 허용 안내가 나타나면 APK를 연 앱에 설치 권한을 부여합니다.</li>
+      <li>개발자 옵션을 켠 다음, LocalDex의 안내에 따라 무선 디버깅을 페어링합니다.</li>
+      <li>화면 사양을 선택하고 <strong>Start DeX</strong>를 누릅니다.</li>
+    </ol>
+
+    <h2>파일 확인</h2>
+    <p class="intro">다운로드한 파일의 SHA-256 값은 다음과 같습니다.</p>
+    <code class="checksum">6d5f2dbb9a41d37fef9fadc7320f2946c253b412b8617e4bd5583c551f70ae9f</code>
+    <footer>이 페이지는 LocalDex APK 다운로드를 위해 제공됩니다.</footer>
+  </main>
+</body>
+</html>

@@ -3,6 +3,7 @@ package com.localdex.scrcpy
 import android.content.Context
 import android.util.Log
 import com.localdex.Adb
+import com.localdex.Prefs
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
 import io.github.muntashirakon.adb.AdbStream
 import kotlinx.coroutines.*
@@ -18,7 +19,8 @@ import kotlin.random.Random
  * until stopped.
  *
  * A virtual display shows no preview window on the main screen (unlike an overlay
- * display) and touches no global display settings. On Android 16 QPR2+ / One UI 8.5+
+ * display) and avoids the global overlay display setting. It does enable the
+ * global freeform-window developer setting. On Android 16 QPR2+ / One UI 8.5+
  * such displays default to fullscreen windowing (scrcpy issue #6143), so once the
  * display id is known the session forces it to freeform with
  * `wm set-display-windowing-mode` — giving movable, resizable windows.
@@ -97,10 +99,11 @@ class ScrcpySession(
     }
 
     private suspend fun runSession() {
+        require(Prefs.isValidDisplaySpec(displaySpec)) { "Invalid display specification" }
         val manager = Adb.createManager(context)
         this.manager = manager
 
-        if (!manager.autoConnect(context, 10_000)) {
+        if (!manager.connectTls(context, 10_000)) {
             throw IOException("Could not connect to ADB. Is wireless debugging on and paired?")
         }
 

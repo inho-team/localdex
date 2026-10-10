@@ -55,7 +55,7 @@ object Adb {
         var stream: AdbStream? = null
         val status = try {
             val manager = AdbConnectionManager.getInstance(context)
-            if (!manager.autoConnect(context, 3000)) {
+            if (!manager.connectTls(context, 3000)) {
                 ConnectionStatus.NEEDS_PAIRING
             } else {
                 try {
@@ -145,24 +145,6 @@ object Adb {
         manager.setApi(android.os.Build.VERSION.SDK_INT)
         return manager
     }
-
-    /**
-     * Runs a shell command over the shared connection. Convenience wrapper used by
-     * pairing-adjacent code; session code passes its own manager to [runShell].
-     */
-    suspend fun runShellCommand(context: Context, command: String): Result<String> =
-        withContext(Dispatchers.IO) {
-            try {
-                val manager = AdbConnectionManager.getInstance(context)
-                if (!manager.autoConnect(context, 10000)) {
-                    return@withContext Result.failure(Exception("Could not connect to ADB."))
-                }
-                Result.success(runShell(manager, command))
-            } catch (e: Exception) {
-                e.printStackTrace()
-                Result.failure(e)
-            }
-        }
 
     /**
      * Runs a command via `exec:` and returns everything it printed, reading until the

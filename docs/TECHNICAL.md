@@ -17,32 +17,39 @@ scrcpy server ──▶ creates virtual display ──▶ One UI runs the deskto
     ◀─ mouse / scroll / key control messages (scrcpy control protocol)
 ```
 
-The app never shells out to an `adb` binary — it speaks the ADB protocol
-directly to `adbd` on localhost.
+The app never shells out to an `adb` binary. It speaks the ADB protocol
+directly to the device's own `adbd` service.
 
 ## The ADB layer
 
 Ported from [anyapk](https://github.com/sam1am/anyapk):
 
 - [libadb-android](https://github.com/MuntashirAkon/libadb-android) implements
-  the ADB wire protocol and TLS.
+  the ADB wire protocol and TLS. LocalDex uses TLS-only service discovery and
+  does not fall back to legacy plaintext TCP ADB.
 - Wireless-debugging **pairing** discovers the pairing port via mDNS
   (`_adb-tls-pairing._tcp`) and takes the 6-digit code through a notification
   inline reply (you can't leave the Settings screen during pairing — the code
   regenerates).
 - A custom **Conscrypt** build is required: the SPAKE2 pairing secret is
   derived from the TLS exporter, which stock TLS stacks don't expose to apps.
-- After the first successful connection the app grants itself
-  `WRITE_SECURE_SETTINGS` via `pm grant` (allowed for this permission because
-  it's declared `development`), so it can re-enable wireless debugging after a
-  reboot or network change without a trip to Settings.
+- Android's ADB TLS server uses a temporary certificate, and the
+  [official ADB client](https://android.googlesource.com/platform/packages/modules/adb/+/refs/heads/main/transport.cpp)
+  accepts any server certificate. That protocol behavior triggers Android
+  Lint's `TrustAllX509TrustManager` warning in libadb-android. LocalDex limits
+  discovery to the device's own addresses and connects only to the TLS ADB
+  service; it never uses the legacy plaintext TCP ADB service.
+- The user enables Wireless debugging in Developer options when needed.
+  LocalDex reads its state but does not request `WRITE_SECURE_SETTINGS` or turn
+  the ADB network service on automatically.
 
 ## The display: virtual, with freeform forced
 
 The session starts the bundled scrcpy server with `new_display=<WxH/DPI>`,
 which creates a trusted virtual display owned by shell. Virtual displays have
 two big advantages over the `overlay_display_devices` approach: **no preview
-window on the main screen**, and **no global settings modified**.
+window on the main screen**, and no global overlay display setting. The app
+does enable the global freeform-window developer setting for window controls.
 
 But on Android 16 QPR2+ (the base of One UI 8.5/9), freeform windowing no
 longer activates on app-created virtual displays

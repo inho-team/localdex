@@ -3,6 +3,7 @@ package com.localdex
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import android.util.AtomicFile
 import android.util.Base64
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
 import android.sun.security.x509.*
@@ -10,6 +11,9 @@ import java.security.KeyPairGenerator
 import java.security.PrivateKey
 import java.security.SecureRandom
 import java.security.cert.Certificate
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.util.*
 
 class AdbConnectionManager private constructor(context: Context) : AbsAdbConnectionManager() {
@@ -27,10 +31,13 @@ class AdbConnectionManager private constructor(context: Context) : AbsAdbConnect
         private const val PREFS_NAME = "adb_keys"
         private const val KEY_PRIVATE = "private_key"
         private const val KEY_CERT = "certificate"
+        private const val IDENTITY_FILE = "adb_identity.properties"
     }
 
     private var mPrivateKey: PrivateKey? = null
     private var mCertificate: Certificate? = null
+    private val identityFile = AtomicFile(File(context.noBackupFilesDir, IDENTITY_FILE))
+    // Read only for migration from builds that placed this credential in Auto Backup.
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     init {
@@ -39,6 +46,11 @@ class AdbConnectionManager private constructor(context: Context) : AbsAdbConnect
     }
 
     private fun loadOrGenerateKeys() {
+        if (loadIdentityFile()) {
+            clearLegacyKeys()
+            return
+        }
+
         val privateKeyStr = prefs.getString(KEY_PRIVATE, null)
         val certStr = prefs.getString(KEY_CERT, null)
 
@@ -46,6 +58,8 @@ class AdbConnectionManager private constructor(context: Context) : AbsAdbConnect
             try {
                 mPrivateKey = loadPrivateKey(privateKeyStr)
                 mCertificate = loadCertificate(certStr)
+                saveKeys()
+                clearLegacyKeys()
                 return
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -53,6 +67,29 @@ class AdbConnectionManager private constructor(context: Context) : AbsAdbConnect
         }
 
         generateAndSaveKeys()
+        clearLegacyKeys()
+    }
+
+    private fun loadIdentityFile(): Boolean {
+        return try {
+            val properties = Properties()
+            identityFile.openRead().use { properties.load(it) }
+            val privateKeyStr = properties.getProperty(KEY_PRIVATE) ?: return false
+            val certStr = properties.getProperty(KEY_CERT) ?: return false
+            mPrivateKey = loadPrivateKey(privateKeyStr)
+            mCertificate = loadCertificate(certStr)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun clearLegacyKeys() {
+        if (prefs.contains(KEY_PRIVATE) || prefs.contains(KEY_CERT)) {
+            if (!prefs.edit().remove(KEY_PRIVATE).remove(KEY_CERT).commit()) {
+                throw IOException("Failed to remove backed-up ADB credentials")
+            }
+        }
     }
 
     private fun generateAndSaveKeys() {
@@ -101,10 +138,19 @@ class AdbConnectionManager private constructor(context: Context) : AbsAdbConnect
     }
 
     private fun saveKeys() {
-        prefs.edit()
-            .putString(KEY_PRIVATE, Base64.encodeToString(mPrivateKey!!.encoded, Base64.DEFAULT))
-            .putString(KEY_CERT, Base64.encodeToString(mCertificate!!.encoded, Base64.DEFAULT))
-            .apply()
+        val properties = Properties().apply {
+            setProperty(KEY_PRIVATE, Base64.encodeToString(mPrivateKey!!.encoded, Base64.NO_WRAP))
+            setProperty(KEY_CERT, Base64.encodeToString(mCertificate!!.encoded, Base64.NO_WRAP))
+        }
+        var output: FileOutputStream? = null
+        try {
+            output = identityFile.startWrite()
+            properties.store(output, null)
+            identityFile.finishWrite(output)
+        } catch (e: Exception) {
+            if (output != null) identityFile.failWrite(output)
+            throw e
+        }
     }
 
     private fun loadPrivateKey(encoded: String): PrivateKey {
