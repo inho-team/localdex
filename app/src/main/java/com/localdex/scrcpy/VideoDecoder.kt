@@ -38,6 +38,12 @@ class VideoDecoder(
     private val surfaceLatch = CountDownLatch(1)
 
     @Volatile
+    private var surfaceGeneration = 0
+
+    private var boundSurfaceGeneration = -1
+    private var codecConfig: ByteArray? = null
+
+    @Volatile
     private var renderEnabled = false
 
     @Volatile
@@ -58,23 +64,17 @@ class VideoDecoder(
 
     /** Must be called (once the viewer's surface exists) before decoding can begin. */
     fun setSurface(surface: Surface) {
+        renderEnabled = false
         this.surface = surface
-        val currentCodec = codec
-        if (currentCodec != null) {
-            // Viewer came back after being backgrounded: point the codec at the new surface.
-            try {
-                currentCodec.setOutputSurface(surface)
-            } catch (e: IllegalStateException) {
-                Log.w(TAG, "Could not switch output surface", e)
-            }
-        }
-        renderEnabled = true
+        surfaceGeneration++
         surfaceLatch.countDown()
     }
 
     /** The viewer's surface is going away; keep decoding but stop rendering. */
     fun clearSurface() {
         renderEnabled = false
+        surface = null
+        surfaceGeneration++
     }
 
     fun stop() {
@@ -107,6 +107,7 @@ class VideoDecoder(
                     Log.i(TAG, "Video session: ${width}x$height")
                     if (videoWidth != 0 && (width != videoWidth || height != videoHeight)) {
                         needsReconfigure = true
+                        codecConfig = null
                     }
                     videoWidth = width
                     videoHeight = height
@@ -124,16 +125,17 @@ class VideoDecoder(
 
                 val isConfig = (ptsAndFlags and FLAG_CONFIG) != 0L
                 if (isConfig) {
-                    // Config packets (SPS/PPS) open every capture session; this is the
-                    // safe moment to (re)create the codec.
+                    // Keep SPS/PPS so a recreated viewer surface can start a fresh
+                    // decoder without waiting for the server to restart capture.
+                    codecConfig = payload
                     surfaceLatch.await()
-                    if (codec == null || needsReconfigure) {
-                        recreateCodec()
-                        needsReconfigure = false
+                    val recreated = ensureCodecForSurface()
+                    if (!recreated && codec != null) {
+                        submit(payload, 0, MediaCodec.BUFFER_FLAG_CODEC_CONFIG)
                     }
-                    submit(payload, 0, MediaCodec.BUFFER_FLAG_CODEC_CONFIG)
-                } else if (codec != null) {
-                    submit(payload, ptsAndFlags and PTS_MASK, 0)
+                } else {
+                    ensureCodecForSurface()
+                    if (codec != null) submit(payload, ptsAndFlags and PTS_MASK, 0)
                 }
             }
         } catch (e: Exception) {
@@ -146,16 +148,41 @@ class VideoDecoder(
         }
     }
 
-    private fun recreateCodec() {
+    /** Called only by the reader thread, which also owns codec creation and release. */
+    private fun ensureCodecForSurface(): Boolean {
+        val generation = surfaceGeneration
+        val target = surface
+        if (target == null) {
+            if (codec != null) releaseCodec()
+            boundSurfaceGeneration = generation
+            return false
+        }
+        if (codec != null && !needsReconfigure && boundSurfaceGeneration == generation) {
+            return false
+        }
+        val config = codecConfig
+        if (config == null) {
+            if (codec != null) releaseCodec()
+            return false
+        }
         releaseCodec()
 
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, videoWidth, videoHeight)
         val newCodec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-        newCodec.configure(format, surface, null, 0)
-        newCodec.start()
+        try {
+            newCodec.configure(format, target, null, 0)
+            newCodec.start()
+        } catch (e: Exception) {
+            newCodec.release()
+            throw e
+        }
         codec = newCodec
-
+        boundSurfaceGeneration = generation
+        needsReconfigure = false
+        renderEnabled = surfaceGeneration == generation
         outputThread = Thread({ drainOutput(newCodec) }, "localdex-video-out").also { it.start() }
+        submit(config, 0, MediaCodec.BUFFER_FLAG_CODEC_CONFIG)
+        return true
     }
 
     private fun submit(data: ByteArray, ptsUs: Long, flags: Int) {

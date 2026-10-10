@@ -82,6 +82,12 @@ class ScrcpySession(
     var displayId = -1
         private set
 
+    @Volatile
+    private var controllerReady = false
+
+    @Volatile
+    private var windowModePrepared = false
+
     /** Tail of the server's stdout/stderr, kept for error reporting. */
     private val serverLog = StringBuilder()
 
@@ -149,7 +155,7 @@ class ScrcpySession(
             onVideoSize = { w, h ->
                 videoWidth = w
                 videoHeight = h
-                _state.value = State.Running(w, h, displayId)
+                publishRunningIfReady()
             },
             onError = { message -> stop(message) },
         )
@@ -159,8 +165,8 @@ class ScrcpySession(
         val ctrl = Controller(control.openOutputStream(), control.openInputStream())
         controller = ctrl
         ctrl.start()
-
-        setStarting("Waiting for display…")
+        controllerReady = true
+        publishRunningIfReady()
     }
 
     /**
@@ -179,9 +185,16 @@ class ScrcpySession(
     }
 
     private fun setStarting(message: String) {
-        if (_state.value !is State.Stopped) {
+        if (_state.value is State.Starting) {
             _state.value = State.Starting(message)
         }
+    }
+
+    private fun publishRunningIfReady() {
+        if (stopped.get() || !controllerReady || !windowModePrepared ||
+            videoWidth <= 0 || videoHeight <= 0 || displayId < 0
+        ) return
+        _state.value = State.Running(videoWidth, videoHeight, displayId)
     }
 
     private suspend fun connectWithRetry(
@@ -216,11 +229,12 @@ class ScrcpySession(
                     val read = input.read(buffer)
                     if (read <= 0) break
                     val text = String(buffer, 0, read)
-                    synchronized(serverLog) {
+                    val logSnapshot = synchronized(serverLog) {
                         serverLog.append(text)
                         if (serverLog.length > 8192) serverLog.delete(0, serverLog.length - 8192)
+                        serverLog.toString()
                     }
-                    parseDisplayId(text)
+                    parseDisplayId(logSnapshot)
                     Log.i(TAG, "[server] ${text.trim()}")
                 }
             } catch (e: IOException) {
@@ -229,9 +243,9 @@ class ScrcpySession(
         }, "localdex-server-log").start()
     }
 
-    private fun parseDisplayId(logChunk: String) {
+    private fun parseDisplayId(logText: String) {
         if (displayId != -1) return
-        val id = displayIdPattern.find(logChunk)?.groupValues?.get(1)?.toIntOrNull() ?: return
+        val id = displayIdPattern.find(logText)?.groupValues?.get(1)?.toIntOrNull() ?: return
         displayId = id
         Log.i(TAG, "Virtual display id: $id")
 
@@ -247,13 +261,10 @@ class ScrcpySession(
                 Log.i(TAG, "Windowing mode after force: $check")
             } catch (e: Exception) {
                 Log.w(TAG, "Could not force freeform on display $id", e)
+            } finally {
+                windowModePrepared = true
+                publishRunningIfReady()
             }
-        }
-
-        // If video is already running, re-emit so observers pick up the id.
-        val current = _state.value
-        if (current is State.Running) {
-            _state.value = current.copy(displayId = id)
         }
     }
 
