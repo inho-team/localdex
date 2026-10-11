@@ -65,7 +65,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 Do not disable Android's APK installation verifier to work around an installation failure. Check the APK's source and signature, then investigate the device's installation error.
 
-The manual **Prepare release APK** workflow builds a signed, non-debuggable APK and uploads it as a workflow artifact. It does not publish a GitHub release. Before running it, configure `LOCALDEX_KEYSTORE_B64`, `LOCALDEX_SIGNING_STORE_PASSWORD`, `LOCALDEX_SIGNING_KEY_ALIAS`, and `LOCALDEX_SIGNING_KEY_PASSWORD` as repository secrets. Keep the keystore and passwords outside the repository. A debug-signed installation cannot be updated in place with a differently signed release APK; uninstall it, install the release APK, and pair LocalDex again.
+Run the manual Jenkins job **dev/localdex-release** with a `VERSION` in `MAJOR.MINOR.PATCH` format to build a signed, non-debuggable APK. Jenkins verifies the signature and manifest, then archives the APK for seven days. The job does not publish a GitHub release. Configure the `localdex-release-keystore`, `localdex-store-password`, `localdex-key-alias`, and `localdex-key-password` Jenkins credentials before running it. Keep the keystore and passwords outside the repository. A debug-signed installation cannot be updated in place with a differently signed release APK; uninstall it, install the release APK, and pair LocalDex again.
 
 ## Notes & limitations
 
