@@ -1,0 +1,72 @@
+pipeline {
+    agent { label 'macmini' }
+
+    options {
+        timeout(time: 90, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        skipDefaultCheckout(true)
+        buildDiscarder(logRotator(daysToKeepStr: '7', numToKeepStr: '20'))
+    }
+
+    parameters {
+        string(name: 'VERSION', defaultValue: '', description: 'APK version in MAJOR.MINOR.PATCH format')
+    }
+
+    environment {
+        JAVA_HOME = '/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home'
+        ANDROID_HOME = '/Users/kimjinseong/Library/Android/sdk'
+        PATH = "/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home/bin:/Users/kimjinseong/Library/Android/sdk/build-tools/34.0.0:/opt/homebrew/bin:${env.PATH}"
+    }
+
+    stages {
+        stage('Checkout and version') {
+            steps {
+                checkout scm
+                sh 'python3 .ci/prepare-release-version.py "$VERSION"'
+            }
+        }
+
+        stage('Build signed APK') {
+            steps {
+                withCredentials([
+                    file(credentialsId: 'localdex-release-keystore', variable: 'LOCALDEX_SIGNING_STORE_FILE'),
+                    string(credentialsId: 'localdex-store-password', variable: 'LOCALDEX_SIGNING_STORE_PASSWORD'),
+                    string(credentialsId: 'localdex-key-alias', variable: 'LOCALDEX_SIGNING_KEY_ALIAS'),
+                    string(credentialsId: 'localdex-key-password', variable: 'LOCALDEX_SIGNING_KEY_PASSWORD')
+                ]) {
+                    sh '''#!/bin/bash
+                        set +x
+                        set -euo pipefail
+                        test -s "$LOCALDEX_SIGNING_STORE_FILE"
+                        test -d "$ANDROID_HOME/platforms/android-34"
+                        test -x "$ANDROID_HOME/build-tools/34.0.0/apksigner"
+                        ./gradlew --no-daemon assembleRelease
+                    '''
+                }
+            }
+        }
+
+        stage('Verify and archive') {
+            steps {
+                sh '''#!/bin/bash
+                    set -euo pipefail
+                    apk=app/build/outputs/apk/release/app-release.apk
+                    "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs "$apk"
+                    analyzer=$(command -v apkanalyzer)
+                    test -n "$analyzer"
+                    manifest=$("$analyzer" manifest print "$apk")
+                    grep -q 'android:allowBackup="false"' <<< "$manifest"
+                    if grep -q 'android:debuggable="true"' <<< "$manifest"; then
+                        echo 'Refusing to archive a debuggable APK.' >&2
+                        exit 1
+                    fi
+                '''
+                archiveArtifacts artifacts: 'app/build/outputs/apk/release/app-release.apk', fingerprint: true, onlyIfSuccessful: true
+            }
+        }
+    }
+
+    post {
+        always { cleanWs(deleteDirs: true, notFailBuild: true) }
+    }
+}
